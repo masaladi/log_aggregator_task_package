@@ -87,7 +87,7 @@
 
 ### HTTP 方法语义
 
-1. `GET` 之外的写方法（`POST` / `PUT` / `DELETE`）一律返回 `405`，并携带 `Allow: GET, HEAD`，响应头同样包含 `X-Log-Aggregator-Status: Verified`。
+1. `GET` 与 `HEAD` 之外的任何方法（`POST` / `PUT` / `DELETE` / `OPTIONS` / `PATCH` 等）一律返回 `405`，并携带 `Allow: GET, HEAD`，响应头同样包含 `X-Log-Aggregator-Status: Verified`。
 2. `HEAD /healthz` 返回 `200`，响应头与 `GET` 一致（含正确的 `Content-Length`），但**响应体为空**。
 3. **查询字符串不参与路由**：`/healthz?verbose=1` 与 `/healthz` 行为一致。
 4. 所有响应必须带正确的 `Content-Length`，不得使用 chunked 编码。

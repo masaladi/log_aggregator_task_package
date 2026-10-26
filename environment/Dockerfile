@@ -1,4 +1,5 @@
-FROM ubuntu:22.04
+# 基础镜像按摘要锁定，保证各次构建输入一致（可复现性）
+FROM ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
 
 RUN sed -i \
     -e 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \

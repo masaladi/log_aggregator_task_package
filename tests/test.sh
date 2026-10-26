@@ -5,7 +5,7 @@
 # 本脚本不额外引入 instruction.md 之外的判定标准。
 set -u
 
-REWARD_FILE="/logs/verifier/reward.txt"
+REWARD_FILE="${REWARD_FILE:-/logs/verifier/reward.txt}"
 DATA_FILE="/var/lib/log-aggregator/logs.jsonl"
 BASE="http://127.0.0.1:9090"
 VENV_PY="/opt/log-aggregator/venv/bin/python"
@@ -155,6 +155,21 @@ elif "GET" not in (h.get("Allow") or ""):
 if h.get(HDR) != "Verified":
     fails.append("POST 405 header=%r" % h.get(HDR))
 
+# 其余非 GET/HEAD 方法同样必须 405 + Allow（方法边界完备性）
+for meth in ("OPTIONS", "PATCH", "PUT", "DELETE"):
+    try:
+        req = urllib.request.Request(BASE + "/healthz", data=b"", method=meth)
+        r = urllib.request.urlopen(req, timeout=5)
+        c2, h2 = r.getcode(), r.headers
+    except urllib.error.HTTPError as e:
+        c2, h2 = e.code, e.headers
+    except Exception:
+        c2, h2 = -1, {}
+    if c2 != 405:
+        fails.append("%s /healthz status=%s (want 405)" % (meth, c2))
+    elif "GET" not in (h2.get("Allow") or ""):
+        fails.append("%s 405 missing Allow header" % meth)
+
 print("OK" if not fails else "FAIL: " + "; ".join(fails))
 PY
 )
@@ -279,7 +294,7 @@ def check(got, want, label):
         # NaN/Infinity 防绕过：nan 与任何数的比较恒为 False，必须显式排除
         if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
             fails.append("%s: avg_latency_ms not finite numeric (%r)" % (label, v))
-        elif abs(v - want["avg_latency_ms"]) > 0.002:
+        elif abs(v - want["avg_latency_ms"]) > 0.001:
             fails.append("%s: avg_latency_ms=%r want %r" % (label, v, want["avg_latency_ms"]))
     except Exception:
         fails.append("%s: avg_latency_ms not numeric" % label)
@@ -506,7 +521,7 @@ def check(got, want, label):
         # NaN/Infinity 防绕过：nan 与任何数的比较恒为 False，必须显式排除
         if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
             fails.append("%s: avg_latency_ms not finite numeric (%r)" % (label, v))
-        elif abs(v - want["avg_latency_ms"]) > 0.002:
+        elif abs(v - want["avg_latency_ms"]) > 0.001:
             fails.append("%s: avg_latency_ms=%r want %r" % (label, v, want["avg_latency_ms"]))
     except Exception:
         fails.append("%s: avg_latency_ms not numeric" % label)
@@ -616,6 +631,9 @@ try:
            for i in range(5000)]
     with open(DATA, "a", encoding="utf-8") as f:
         f.write("\n".join(add) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+    time.sleep(0.3)                    # 写入完全落盘并稳定后，再进入并发窗口
     want = full_scan()
 
     def one():
@@ -636,12 +654,11 @@ try:
     if slow:
         fails.append("3c concurrency: %d/20 requests exceeded %.1fs (max %.2fs)"
                      % (len(slow), SLA, max(slow)))
-    first = results[0][0]
-    for got, _ in results[1:]:
-        if got.get("total_logs") != first.get("total_logs"):
-            fails.append("3c concurrency: inconsistent total_logs across concurrent requests")
+    # 全部 20 个响应都必须与真值一致（写窗口已关闭，不存在新旧状态并存）
+    for i, (got, _) in enumerate(results):
+        if got != want:
+            fails.append("3c concurrency: response #%d inconsistent with truth" % i)
             break
-    check(first, want, "3c concurrent value (no double counting)")
 except Exception as e:
     fails.append("3c concurrency test failed: %s" % e)
 

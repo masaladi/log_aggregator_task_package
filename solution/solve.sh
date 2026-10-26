@@ -52,6 +52,7 @@ import http.server
 import json
 import os
 import re
+import sys
 import threading
 import time
 import urllib.parse
@@ -82,8 +83,8 @@ def load_config():
                 cfg = json.load(f)
                 port = cfg.get("server", {}).get("port", port)
                 data_file = cfg.get("server", {}).get("data_file", data_file)
-        except Exception:
-            pass
+        except Exception as e:
+            print("[warn] config load failed (%s), using defaults" % e, file=sys.stderr)
     return port, data_file
 
 
@@ -157,11 +158,14 @@ def _compute_anchors(f, size):
         f.seek(0)
         return [(0, zlib.crc32(f.read(HEAD_BYTES)))]
     span = _state["offset"]
-    marks = sorted({0, span // 4, span // 2, (3 * span) // 4})
+    step = span // 16
+    marks = sorted({0} | {step * i for i in range(1, 16) if step > 0})
     out = []
     for off in marks:
+        n = HEAD_BYTES if off == 0 else ANCHOR_BYTES
+        n = max(1, min(n, span - off))      # 严格裁剪：绝不读取已解析区间之外的字节
         f.seek(off)
-        out.append((off, zlib.crc32(f.read(ANCHOR_BYTES if off else HEAD_BYTES))))
+        out.append((off, zlib.crc32(f.read(n))))
     return out
 
 
@@ -241,8 +245,10 @@ def aggregate(data_file):
             st = os.fstat(f.fileno())
             # 锚点校验：捕获 "truncate + rewrite"。这种情况下文件可能反而变长，
             # 但已解析区间的内容已被整体换掉，只比 size 会误判成追加、读出新旧混合的结果。
-            # 头部 4096 字节 + 已解析区间三个等距锚点各 512 字节：
-            # 纯追加时锚点区间内容不变（增量继续）；任何就地区间内容变化都会命中至少一个锚点。
+            # 头部 4096 字节 + 已解析区间 17 个等距锚点各 512 字节（约每 1/16 区间一个）：
+            # 纯追加时锚点区间内容不变（增量继续）；就地区间内容变化以极高概率命中锚点。
+            # 这是采样式检测：锚点密度是检测灵敏度与每请求校验开销的权衡，
+            # 大面积整体重写（测试场景）必然命中；孤立单点微改存在理论漏检窗口。
             anchors = _compute_anchors(f, st.st_size)
             if (_snap["stats"] is None
                     or _state["ino"] != st.st_ino
@@ -315,6 +321,13 @@ class LogAggregatorHandler(http.server.BaseHTTPRequestHandler):
         self._send(405, b"", True, {"Allow": "GET, HEAD"})
 
     def do_DELETE(self):
+        self._send(405, b"", True, {"Allow": "GET, HEAD"})
+
+    def do_OPTIONS(self):
+        self._send(405, b"", True, {"Allow": "GET, HEAD"})
+
+    def do_PATCH(self):
+        self._read_body()
         self._send(405, b"", True, {"Allow": "GET, HEAD"})
 
     def log_message(self, format, *args):
