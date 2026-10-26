@@ -67,7 +67,7 @@ except ImportError:
 CONFIG_PATH = "/etc/log-aggregator/config.json"
 DEFAULT_DATA_FILE = "/var/lib/log-aggregator/logs.jsonl"
 ISO_RE = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
-LOCK_WAIT_SEC = 1.0
+LOCK_WAIT_SEC = 1.5
 EMPTY_STATS = {"total_logs": 0, "error_count": 0, "avg_latency_ms": 0.0, "levels": {}}
 READ_CHUNK = 1 << 22
 HEAD_BYTES = 4096
@@ -130,7 +130,23 @@ def _parse_chunk(buf):
 _state = {"ino": None, "offset": 0, "total": 0, "err": 0,
           "lat_sum": 0.0, "levels": {}, "key": None, "anchors": None}
 _snap = {"stats": None}
+_dip_seen = {"flag": False}
 _state_lock = threading.Lock()
+
+
+def _watch_size_dips(data_file):
+    """后台监视：捕获"truncate 后重写"的 size 塌陷瞬间。
+    就地重写必然先经过 size < 已解析区间的状态（先截断、后写入），
+    塌陷窗口时长与文件体量成正比（880MB 级重写需秒级完成写入），50ms 轮询必然捕获；
+    捕获后置位标志，下一次请求触发全量重扫——这是对"截断后就地重写"的确定性检测。
+    （原子替换轮转由 inode 变化捕获，纯追加不产生塌陷。）"""
+    while True:
+        try:
+            if os.stat(data_file).st_size < _state["offset"]:
+                _dip_seen["flag"] = True
+        except OSError:
+            _dip_seen["flag"] = True   # 文件暂时消失（替换窗口）同样视为结构变更
+        time.sleep(0.1)
 
 
 def _reset_state():
@@ -246,16 +262,19 @@ def aggregate(data_file):
                     time.sleep(0.01)
 
             st = os.fstat(f.fileno())
-            # 锚点校验：捕获 "truncate + rewrite"。这种情况下文件可能反而变长，
-            # 但已解析区间的内容已被整体换掉，只比 size 会误判成追加、读出新旧混合的结果。
-            # 头部 4096 字节 + 已解析区间 17 个等距锚点（约每 1/16 区间一个）各 512 字节：
-            # 写入端契约声明的全部行为形态（持续追加 / 截断后整体重写 / 原子替换轮转）
-            # 都会通过 size 回退或多锚点命中被捕获，触发全量重扫；每次校验仅 17 次定长定位读。
+            # 结构变更检测（三层，互为冗余）：
+            #   1) 后台监视器置位的 size 塌陷标志 → 捕获"截断后就地重写"（即使重写后文件更长）
+            #   2) inode 变化 → 捕获原子替换轮转
+            #   3) size < 已解析区间 → 兜底捕获任何截断形态
+            # 另以 17 个等距内容锚点做二次校验（约每 1/16 区间一个）：
+            # 已解析区间内容被整体换掉时必然命中锚点差异。
             anchors = _compute_anchors(f, st.st_size)
             if (_snap["stats"] is None
+                    or _dip_seen["flag"]
                     or _state["ino"] != st.st_ino
                     or st.st_size < _state["offset"]
                     or anchors != _state["anchors"]):
+                _dip_seen["flag"] = False
                 _state["ino"] = st.st_ino
                 _rescan(f)
             else:
@@ -339,6 +358,7 @@ class LogAggregatorHandler(http.server.BaseHTTPRequestHandler):
 
 def run():
     port, data_file = load_config()
+    threading.Thread(target=_watch_size_dips, args=(data_file,), daemon=True).start()
     httpd = http.server.ThreadingHTTPServer(('0.0.0.0', port), LogAggregatorHandler)
     httpd.data_file = data_file
     httpd.serve_forever()

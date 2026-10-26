@@ -5,10 +5,11 @@ name = "humanlaya/log-aggregator-incident"
 authors = [{ name = "humanlaya", email = "noreply@example.com" }]
 
 [agent]
-# 60 分钟：筛选模型2 在 30 分钟预算内未能完成任务（agent execution timed
-# out after 1800.0 seconds）。本题的探查与实现成本较高（约 900 万行数据、
-# 单核全量解析 20 秒以上），需要为较慢的候选模型留足执行时间。
-timeout_sec = 3600
+# 90 分钟：筛选模型2 曾在 30 分钟（1800s）与 60 分钟（3600s）预算内均未能完成
+# 作答（agent execution timed out）。本题基线约 900 万行 / 880 MB，候选模型
+# 需要多轮"建态-自测-修正"循环，每轮全量验证约 15-30 秒，为较慢的候选模型
+# 留足执行时间。难度门只约束得分，不约束用时。
+timeout_sec = 5400
 
 [environment]
 build_timeout_sec = 1200.0

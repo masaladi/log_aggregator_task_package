@@ -20,13 +20,54 @@
 
 ## 复现方式
 
+构建与运行使用同一个镜像标签 `logagg-bench`；基准脚本完整内联如下，可直接复制执行。
+
 ```bash
 docker build -t logagg-bench environment
-docker run --rm --cpus=1 --memory=2g logagg-bash bash -c \
-  "apt-get update -qq && apt-get install -y -qq python3-ujson >/dev/null && python3 /tmp/bench.py"
-# bench.py：分块流式读取 /var/lib/log-aggregator/logs.jsonl，
-# 逐行 loads + ISO 时间戳过滤 + latency 累加，对 stdlib / ujson / rapidjson 各计时一轮
+docker run --rm --cpus=1 --memory=2g logagg-bench bash -c 'apt-get update -qq \
+  && apt-get install -y -qq python3-ujson python3-rapidjson >/dev/null \
+  && cat > /tmp/bench.py << "EOF"
+import json, time, re
+ISO = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+DATA = "/var/lib/log-aggregator/logs.jsonl"
+
+def bench(loads, name):
+    t0 = time.monotonic()
+    total = 0
+    with open(DATA, "rb") as f:
+        prev = None
+        for line in f:
+            if prev is not None:
+                try:
+                    r = loads(prev)
+                except Exception:
+                    prev = line
+                    continue
+                if isinstance(r, dict):
+                    ts = r.get("timestamp", "")
+                    if isinstance(ts, str) and ISO.match(ts):
+                        total += 1
+            prev = line
+    print("%s: %.1fs total=%d" % (name, time.monotonic() - t0, total))
+
+import ujson; bench(ujson.loads, "ujson   ")
+import rapidjson; bench(rapidjson.loads, "rapidjson")
+bench(json.loads, "stdlib  ")
+import ujson; bench(ujson.loads, "ujson(2)")
+EOF
+python3 /tmp/bench.py'
 ```
+
+预期输出形如：`ujson: 12-15s`、`rapidjson: ~13s`、`stdlib: 22-31s`、`total=8550015`。
+
+## 回归记录
+
+| 日期 | 版本 | Oracle 结果 | warmup 实测 | 备注 |
+|---|---|---|---|---|
+| 2026-10-26 | v12（9M 数据首版） | 3/3 = 1.00 | 30.7s | stdlib 参考解 |
+| 2026-10-26 | v13c（ujson + 双性能门） | 3/3 = 1.00 | 14.4-15.6s | 镜像 apt 预装 ujson |
+| 2026-10-26 | v15（锚点 17 个 + 方法契约补测） | 3/3 = 1.00 | 14.4s | — |
+| 2026-10-26 | v18（size 塌陷监视器） | 3/3 = 1.00 | 见最新送测前记录 | — |
 
 ## 门槛与实测余量（门槛定义见 instruction.md）
 
