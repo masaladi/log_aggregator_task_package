@@ -219,7 +219,8 @@ def aggregate(data_file):
     with _state_lock:                      # single-flight：并发请求合并为一次解析
         try:
             st0 = os.stat(data_file)
-        except OSError:
+        except OSError as e:
+            print("[warn] stat failed (%s): serving last complete snapshot" % e, file=sys.stderr)
             return dict(_snap["stats"] or EMPTY_STATS)
         key0 = (st0.st_ino, st0.st_mtime_ns, st0.st_size)
         if key0 == _state["key"] and _snap["stats"] is not None:
@@ -227,7 +228,8 @@ def aggregate(data_file):
 
         try:
             f = open(data_file, "rb")
-        except OSError:
+        except OSError as e:
+            print("[warn] open failed (%s): serving last complete snapshot" % e, file=sys.stderr)
             return dict(_snap["stats"] or EMPTY_STATS)
 
         try:
@@ -239,16 +241,16 @@ def aggregate(data_file):
                 except OSError:
                     if time.monotonic() >= deadline:
                         # 等锁超时：返回上一次成功统计的完整快照，绝不返回半写内容
+                        print("[warn] flock wait timeout: serving last complete snapshot", file=sys.stderr)
                         return dict(_snap["stats"] or EMPTY_STATS)
                     time.sleep(0.01)
 
             st = os.fstat(f.fileno())
             # 锚点校验：捕获 "truncate + rewrite"。这种情况下文件可能反而变长，
             # 但已解析区间的内容已被整体换掉，只比 size 会误判成追加、读出新旧混合的结果。
-            # 头部 4096 字节 + 已解析区间 17 个等距锚点各 512 字节（约每 1/16 区间一个）：
-            # 纯追加时锚点区间内容不变（增量继续）；就地区间内容变化以极高概率命中锚点。
-            # 这是采样式检测：锚点密度是检测灵敏度与每请求校验开销的权衡，
-            # 大面积整体重写（测试场景）必然命中；孤立单点微改存在理论漏检窗口。
+            # 头部 4096 字节 + 已解析区间 17 个等距锚点（约每 1/16 区间一个）各 512 字节：
+            # 写入端契约声明的全部行为形态（持续追加 / 截断后整体重写 / 原子替换轮转）
+            # 都会通过 size 回退或多锚点命中被捕获，触发全量重扫；每次校验仅 17 次定长定位读。
             anchors = _compute_anchors(f, st.st_size)
             if (_snap["stats"] is None
                     or _state["ino"] != st.st_ino
@@ -263,7 +265,8 @@ def aggregate(data_file):
             _state["key"] = (st.st_ino, st.st_mtime_ns, st.st_size)
             _snap["stats"] = _snapshot()
             return dict(_snap["stats"])
-        except OSError:
+        except OSError as e:
+            print("[warn] read/parse I/O failed (%s): serving last complete snapshot" % e, file=sys.stderr)
             return dict(_snap["stats"] or EMPTY_STATS)
         finally:
             try:

@@ -3,20 +3,21 @@
 
 对任务包做静态一致性断言，任何一项失败都以非零码退出。
 动态验证（镜像构建、Oracle/NOP 对照、性能基准）为包外流程，
-方法与记录见 README.md「发布前回归清单」与 docs/benchmarks.md。
+方法与记录见 README.md「发布前回归清单」与 benchmarks.md。
 """
 import os
 import re
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.abspath(__file__))
 
 REQUIRED_FILES = [
     "instruction.md",
     "task.toml",
     "README.md",
+    "benchmarks.md",
+    "precheck.py",
     "docs/scoring-rationale.md",
-    "docs/benchmarks.md",
     "environment/Dockerfile",
     "environment/app.py",
     "environment/config.json",
@@ -37,8 +38,8 @@ FORBIDDEN_PATTERNS = [
 # 三方（题面/README/判分口径文档）必须同时出现的数字与口径
 MUST_ALIGN = {
     "instruction.md": ["24 秒", "30 秒", "1.5 秒", "855 万", "900 万行"],
-    "README.md": ["24 秒", "30 秒", "1.5 秒", "900 万行"],
-    "docs/scoring-rationale.md": ["24s", "30s"],
+    "README.md": ["24 秒", "30 秒", "1.5 秒", "900 万行", "benchmarks.md"],
+    "benchmarks.md": ["24s", "30s"],
 }
 
 # 判分脚本中不允许出现的过期数字（历次迭代残留检查）
@@ -76,8 +77,10 @@ def main():
             if n not in text:
                 errors.append("alignment: %r missing in %s" % (n, rel))
 
-    # 过期数字残留
+    # 过期数字残留（跳过本文件：其模式表本身就包含这些字面值）
     for rel, text in texts.items():
+        if rel == "precheck.py":
+            continue
         for n in STALE_NUMBERS:
             if n in text:
                 errors.append("stale number %r in %s" % (n, rel))

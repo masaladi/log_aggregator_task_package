@@ -5,7 +5,7 @@
 # 本脚本不额外引入 instruction.md 之外的判定标准。
 set -u
 
-REWARD_FILE="${REWARD_FILE:-/logs/verifier/reward.txt}"
+REWARD_FILE="/logs/verifier/reward.txt"
 DATA_FILE="/var/lib/log-aggregator/logs.jsonl"
 BASE="http://127.0.0.1:9090"
 VENV_PY="/opt/log-aggregator/venv/bin/python"
