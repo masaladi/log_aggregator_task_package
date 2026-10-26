@@ -1,0 +1,8 @@
+{
+  "server": {
+    "port": 9090,
+    "data_file": "/var/lib/log-aggregator/logs.jsonl",
+    "port": 9091,
+    "data_file": "/var/lib/log-aggregator/logs.err"
+  }
+}
