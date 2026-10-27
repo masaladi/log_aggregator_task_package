@@ -115,6 +115,32 @@ if code != 404:
 if h.get(HDR) != "Verified":
     fails.append("/no-such-path header=%r" % h.get(HDR))
 
+# 路径精确匹配：尾随斜杠 / 大小写变体均属未定义路径
+for p in ("/healthz/", "/api/v1/aggregate/", "/HEALTHZ"):
+    code, h, body = get(p)
+    if code != 404:
+        fails.append("%s status=%s (want 404, exact-path matching)" % (p, code))
+    if h.get(HDR) != "Verified":
+        fails.append("%s header=%r" % (p, h.get(HDR)))
+
+# 404 响应 framing：Content-Length 与实际响应体一致，不得 chunked
+code, h, body = get("/no-such-path")
+try:
+    blen = len(body.encode("utf-8"))
+    if int(h.get("Content-Length") or -1) != blen:
+        fails.append("404 Content-Length=%r (want %d)" % (h.get("Content-Length"), blen))
+    if (h.get("Transfer-Encoding") or "").lower().find("chunked") >= 0:
+        fails.append("404 uses chunked encoding")
+except Exception as e:
+    fails.append("404 framing check failed: %s" % e)
+
+# 查询字符串对所有端点不参与路由
+code, h, body = get("/api/v1/aggregate?fresh=1")
+if code != 200:
+    fails.append("/api/v1/aggregate?fresh=1 status=%s (want 200, query strings are not routed)" % code)
+if h.get(HDR) != "Verified":
+    fails.append("/api/v1/aggregate?fresh=1 header=%r" % h.get(HDR))
+
 code, h, body = get("/api/v1/aggregate/extra")
 if code != 404:
     fails.append("/api/v1/aggregate/extra status=%s (want 404)" % code)
@@ -670,6 +696,22 @@ else:
                 fails.append("venv interpreter sys.prefix=%r" % out)
         except Exception as e:
             fails.append("venv interpreter not runnable: %s" % e)
+
+# ---------- 3a2. 遗留抢占/看护进程必须清零（运维规范 4：清理必须彻底） ----------
+leftovers = []
+for d in os.listdir("/proc"):
+    if not d.isdigit():
+        continue
+    try:
+        raw = open("/proc/%s/cmdline" % d, "rb").read().decode("utf-8", "replace")
+    except Exception:
+        continue
+    argv = [a for a in raw.split("\x00") if a]
+    if any(a.endswith("/opt/squatter.py") or a.endswith("/opt/portmon.py") for a in argv):
+        leftovers.append({"pid": d, "cmd": " ".join(argv)[:120]})
+if leftovers:
+    fails.append("leftover squatter/portmon processes must be terminated (ops rule 4): %s"
+                 % "; ".join("%s:%s" % (l["pid"], l["cmd"]) for l in leftovers[:3]))
 
 # ---------- 3b. 日志轮转（原子替换 inode） ----------
 try:

@@ -67,16 +67,17 @@ python3 /tmp/bench.py'
 commit SHA，而以下列**文件内容指纹（sha256）**为准——质检可在任一冻结快照内直接
 用 `sha256sum` 复核，与 git 历史无关。
 
-### 当前版本（v20）关键文件指纹
+### 当前版本（v21）关键文件指纹
 
 | 文件 | sha256 |
 |---|---|
-| `solution/solve.sh` | `7b4adc9cdd05e345df55ca4c0b7128014ab5c48e9d266cf7fecb026a06588314` |
-| `tests/test.sh` | `24ee317932df9fd4cdc63b9c22b34a18d3c70907ab1fb05a9adef5293890fd64` |
+| `solution/solve.sh` | `4164d4213a88039704483f47dcbdde2ac888d046ff5d812396a682021c1dc606` |
+| `tests/test.sh` | `b39ece9f3278b9b161efd271f2f247ef7204b547a32b98794f73b25f3d9426e6` |
 | `environment/gen_baseline.py` | `cd65ae3af448ead48e169d5c796610592d05b4bf9a62a22dbee6cb1a1c53e1d6` |
-| `environment/Dockerfile` | `aed7fdb4ea40e2e28e4c512539330ce24a36d4f4a9ef0c89118cb006221e990e` |
+| `environment/Dockerfile` | `6577e5c76cc21e8fc58d37a79abc3863588067a3a2270af697b2395e712abc5f` |
 | `environment/squatter.py` | `ac3040ff707102bcfd0fce66967f5cc50288e74a719f3666a319a9320e5919c0` |
-| `environment/entrypoint.sh` | `f7a51865b9e8945abed7c7e5fb4686d7e51d9d36b7af142d7198d2b3ee7efb4e` |
+| `environment/entrypoint.sh` | `7fc22ccf1abc6ce8edf5bb1cd8762be5cf212abc5c8b34c56d60c16a57f13e34` |
+| `environment/portmon.py` | `2b88305ab839a9891d8d736d6515b9855fc6c6007101e19c9fb8a7268366d56c` |
 
 ### 历史回归记录
 
@@ -90,6 +91,7 @@ commit SHA，而以下列**文件内容指纹（sha256）**为准——质检可
 | 2026-10-26 | v15（锚点 17 个 + 方法契约补测） | — | 3/3 = 1.00（连跑两轮） | 14.4s / 15.0s |
 | 2026-10-26 | v18（size 塌陷监视器） | — | 3/3 = 1.00（连跑两轮） | 14.9s / 15.6s |
 | 2026-10-27 | v20（见上方指纹表） | f5aecca | 3/3 = 1.00（同容器连跑三轮） | 13.4s |
+| 2026-10-27 | v21（端口看护进程 + 精确匹配契约；见上方指纹表） | 本地待提交 | NOP 0/3；3/3 = 1.00（同容器连跑两轮） | 14.6s |
 
 新增记录时必须：先更新「当前版本关键文件指纹」表，再在本表追加行；未关联指纹的
 性能数字不作为回归对照依据。

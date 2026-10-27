@@ -10,7 +10,7 @@
 | 路径 | 角色 | 谁使用 | 何时使用 |
 |---|---|---|---|
 | `instruction.md` | 题面：验收标准、输入契约（含异常闭环表）、写入端行为与正确性契约、运维规范 | 被测代理 | 评测开始时注入 |
-| `environment/` | 初始环境：`Dockerfile`（含缺陷现场与基线数据生成，基础镜像按摘要锁定）、`app.py`（上一任遗留的缺陷服务）、`config.json`（含重复键陷阱）、`squatter.py`（端口占用进程）、`entrypoint.sh`、`gen_baseline.py` | 构建镜像 | 评测开始前 |
+| `environment/` | 初始环境：`Dockerfile`（含缺陷现场与基线数据生成，基础镜像按摘要锁定）、`app.py`（上一任遗留的缺陷服务）、`config.json`（含重复键陷阱）、`squatter.py`（端口占用进程）、`portmon.py`（端口看护进程：端口空出即重新抢占）、`entrypoint.sh`、`gen_baseline.py` | 构建镜像 | 评测开始前 |
 | `solution/solve.sh` | Oracle 解法：修复现场并实现满足全部契约的增量解析服务 | Oracle 代理 | Oracle trial 执行 |
 | `tests/test.sh` | Verifier：3 项 × 1/3 判分，全部真值由 verifier 侧独立计算，不信任服务自报 | 评测框架（代理结束后注入并执行） | 判分阶段 |
 | `docs/scoring-rationale.md` | 判分粒度设计说明：3 项二元结构与 ≤0.700 难度门的绑定论证 | 质检审阅 | R2 质检 |
@@ -41,9 +41,9 @@
 
 ## 判分口径速览
 
-- ITEM 1：HTTP 协议与端点（healthz / aggregate 结构与紧凑输出 / 404 / 405+Allow 覆盖全部非 GET/HEAD 方法 / HEAD / 查询串 / 自定义响应头）
+- ITEM 1：HTTP 协议与端点（healthz / aggregate 结构与紧凑输出 / 404 与路径精确匹配 / 405+Allow 覆盖全部非 GET/HEAD 方法 / HEAD / 查询串 / 自定义响应头 / Content-Length framing）
 - ITEM 2：聚合正确性 + 增量 SLA（变更后首请求 ≤1.5s）+ 写入中途未提交行 + 截断/就地重写回退
-- ITEM 3：运维真实性（logsvc + venv + 9090 归属）+ 日志轮转（含轮转期间并发不撕裂）+ 20 并发响应与真值全量一致 + flock 等锁上限与快照回退
+- ITEM 3：运维真实性（logsvc + venv + 9090 归属 + 遗留抢占/看护进程清零）+ 日志轮转（含轮转期间并发不撕裂）+ 20 并发响应与真值全量一致 + flock 等锁上限与快照回退
 
 时延口径以 `instruction.md` 为唯一标准：常规变更后 1.5 秒；结构性变更（轮转、截断后就地重写）
 后的首个请求 30 秒；服务启动后的首次统计请求 24 秒。

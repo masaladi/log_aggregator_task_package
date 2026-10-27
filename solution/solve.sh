@@ -11,21 +11,24 @@ rm -rf /tmp/_venvcheck
 # 2. 清理 9090 端口占用的无主进程
 #    容器内没有 CAP_SYS_PTRACE，fuser 读不到别人的 /proc/PID/fd，不能作为唯一手段；
 #    以 /proc/PID/cmdline 匹配为准（root 可读），并等待端口真正释放后再启动。
+#    顺序关键：必须先终止端口看护进程（portmon），否则仅杀占位进程后
+#    端口会在数秒内被看护进程重新夺走，服务永远无法绑定。
+pkill -f /opt/portmon.py || true
 pkill -f /opt/squatter.py || true
 pkill -f "/opt/log-aggregator/venv/bin/python /opt/log-aggregator/app.py" || true
 pkill -f "/opt/log-aggregator/app.py" || true
 fuser -k 9090/tcp 2>/dev/null || true
 
-# 有界等待：最多 15 秒，端口就绪即提前返回；超时给出显式警告而非无限轮询
-port_up=false
+# 有界等待端口释放（squatter 让位需要一瞬间）；就绪判定为"端口已无人监听"
+port_free=false
 for i in $(seq 1 150); do
     if python3 -c "import socket,sys; s=socket.socket(); s.settimeout(0.2); sys.exit(0 if s.connect_ex(('127.0.0.1',9090))!=0 else 1)"; then
-        port_up=true
+        port_free=true
         break
     fi
     sleep 0.1
 done
-$port_up || echo "[solve] WARN: port 9090 not reachable within 15s" >&2
+$port_free || echo "[solve] WARN: port 9090 still occupied after cleanup" >&2
 
 # 3. 修复配置文件（原文件含重复键，后出现的键值会覆盖前面的，且指向错误端口与错误数据路径）
 cat << 'EOF' > /etc/log-aggregator/config.json

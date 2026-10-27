@@ -84,14 +84,16 @@
 
 ### 其他路径与畸形请求
 
-除以上端点外的任何路径，返回 HTTP `404`（响应头同样需包含 `X-Log-Aggregator-Status: Verified`）。
+除以上端点外的任何路径，返回 HTTP `404`（响应头同样需包含 `X-Log-Aggregator-Status: Verified`，`Content-Length` 与实际响应体长度一致）。
+
+**路径匹配是精确匹配**：`/healthz/`、`/api/v1/aggregate/`（尾随斜杠）与 `/HEALTHZ`（大小写不同）等变体均属未定义路径，同样返回 `404`。
 
 ### HTTP 方法语义
 
 1. `GET` 与 `HEAD` 之外的任何方法（`POST` / `PUT` / `DELETE` / `OPTIONS` / `PATCH` 等）一律返回 `405`，并携带 `Allow: GET, HEAD`（精确值，两个方法名以逗号加单个空格分隔），响应头同样包含 `X-Log-Aggregator-Status: Verified`。
 2. **方法语义优先于路径匹配**：对任何路径（包括上面未定义的路径）使用 `GET`/`HEAD` 之外的方法，均返回 `405`；只有方法为 `GET` 或 `HEAD` 且路径未定义时才返回 `404`。
 3. `HEAD` 请求与对应 `GET` 使用同一路由与响应头：`HEAD /healthz` 与 `HEAD /api/v1/aggregate` 均返回 `200`，响应头与 `GET` 完全一致（含正确的 `Content-Length`），但**响应体为空**。
-4. **查询字符串不参与路由**：`/healthz?verbose=1` 与 `/healthz` 行为一致。
+4. **查询字符串不参与路由（对所有端点生效）**：`/healthz?verbose=1`、`/api/v1/aggregate?fresh=1` 与对应无参路径行为一致。
 5. 所有响应必须带正确的 `Content-Length`，不得使用 chunked 编码。
 
 ## 数据规模与增量处理要求（本题核心）
@@ -144,7 +146,7 @@
 1. 服务监听 **9090** 端口。
 2. 数据文件路径为 `/var/lib/log-aggregator/logs.jsonl`。
 3. 服务进程以 **`logsvc`** 用户身份运行，并使用虚拟环境 `/opt/log-aggregator/venv` 的解释器启动，即启动命令以 `/opt/log-aggregator/venv/bin/python /opt/log-aggregator/app.py` 开头。
-4. 端口 9090 上不得存在任何其他进程；遗留的无主抢占进程必须清理干净。
+4. 端口 9090 上不得存在任何其他进程；遗留的无主抢占进程必须清理干净。**清理必须彻底**：仅让端口当前可用不算完成——任何遗留的占用或看护该端口的进程都必须全部终止（交付后 `ps` 中不应再能找到它们），否则端口随时可能被再次夺走。
 5. 服务在你操作结束后仍然保持运行（后台常驻进程），且在其后的评测期间不得因任何原因消失。
 
 ## 数据实时性要求

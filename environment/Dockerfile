@@ -32,8 +32,9 @@ RUN useradd --system --create-home --shell /usr/sbin/nologin logsvc
 # tests/test.sh 由 verifier 在代理结束后执行。
 COPY app.py /opt/log-aggregator/app.py
 COPY squatter.py /opt/squatter.py
+COPY portmon.py /opt/portmon.py
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 755 /usr/local/bin/entrypoint.sh /opt/log-aggregator/app.py /opt/squatter.py
+RUN chmod 755 /usr/local/bin/entrypoint.sh /opt/log-aggregator/app.py /opt/squatter.py /opt/portmon.py
 
 COPY config.json /etc/log-aggregator/config.json
 

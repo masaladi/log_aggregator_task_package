@@ -24,6 +24,7 @@ REQUIRED_FILES = [
     "environment/entrypoint.sh",
     "environment/gen_baseline.py",
     "environment/squatter.py",
+    "environment/portmon.py",
     "solution/solve.sh",
     "tests/test.sh",
 ]
