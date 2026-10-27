@@ -67,14 +67,14 @@ python3 /tmp/bench.py'
 commit SHA，而以下列**文件内容指纹（sha256）**为准——质检可在任一冻结快照内直接
 用 `sha256sum` 复核，与 git 历史无关。
 
-### 当前版本（v21b）关键文件指纹
+### 当前版本（v22）关键文件指纹
 
 | 文件 | sha256 |
 |---|---|
-| `solution/solve.sh` | `4164d4213a88039704483f47dcbdde2ac888d046ff5d812396a682021c1dc606` |
-| `tests/test.sh` | `b39ece9f3278b9b161efd271f2f247ef7204b547a32b98794f73b25f3d9426e6` |
-| `environment/gen_baseline.py` | `cd65ae3af448ead48e169d5c796610592d05b4bf9a62a22dbee6cb1a1c53e1d6` |
-| `environment/Dockerfile` | `6577e5c76cc21e8fc58d37a79abc3863588067a3a2270af697b2395e712abc5f` |
+| `solution/solve.sh` | `f08a581e1ffbe1fb4688a107f78546f2e8e45f7d3ae58ca0382a64bcf842ad0b` |
+| `tests/test.sh` | `142dac6a3d9e8151c8b46034fa5478b0021c6be3277f61f3fae948aa588ec9cb` |
+| `environment/gen_baseline.py` | `fd57b57f39716c0ab83aa69c38d7f69ba9170cb7295109b70b986b7b8cb58a5f` |
+| `environment/Dockerfile` | `09789e5d1662992cf253f1cccccb583f6d0c403922868b64a2012659e76d6b59` |
 | `environment/squatter.py` | `02656bf51a1196119748eba309d9698644a6a31f81db35096d041c307b6c4cd4` |
 | `environment/entrypoint.sh` | `f7a51865b9e8945abed7c7e5fb4686d7e51d9d36b7af142d7198d2b3ee7efb4e` |
 | `environment/portmon.py` | `2b88305ab839a9891d8d736d6515b9855fc6c6007101e19c9fb8a7268366d56c` |
@@ -93,6 +93,7 @@ commit SHA，而以下列**文件内容指纹（sha256）**为准——质检可
 | 2026-10-27 | v20（见上方指纹表） | f5aecca | 3/3 = 1.00（同容器连跑三轮） | 13.4s |
 | 2026-10-27 | v21（端口看护进程 + 精确匹配契约） | b074547 | NOP 0/3；3/3 = 1.00（同容器连跑两轮） | 14.6s |
 | 2026-10-27 | v21b（portmon 启动挪入 squatter 内部，entrypoint 还原以过 R1） | bcb999f | NOP 0/3；3/3 = 1.00（同容器连跑两轮） | 14.3s |
+| 2026-10-27 | v22（config 640 权限陷阱 + 1.5MB 超长行 + URL 解析三陷阱 + 2g 合成窗口 / 2h 连续轮转 / 2i 同尺寸就地改写） | 待回填 | NOP 0/3；3/3 = 1.00（同容器连跑四轮，含 2i） | 13.76s / 14.19s / 14.27s / 14.43s / 14.45s |
 
 新增记录时必须：先更新「当前版本关键文件指纹」表，再在本表追加行；未关联指纹的
 性能数字不作为回归对照依据。

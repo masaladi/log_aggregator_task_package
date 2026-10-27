@@ -601,6 +601,54 @@ try:
 except Exception as e:
     fails.append("2h consecutive rotation test failed: %s" % e)
 
+# ---------- 2i. 同尺寸就地改写：inode 与字节数都不变，只有内容与 mtime 变化 ----------
+# 只按 (inode, size) 判断"文件没变"的实现会返回陈旧结果；必须把 mtime/ctime 纳入变更判定。
+try:
+    OLD_TAG = b'"level":"DEBUG"'
+    NEW_TAG = b'"level":"ERROR"'          # 等长替换：文件长度严格不变
+    size_before = os.path.getsize(DATA)
+    ino_before = os.stat(DATA).st_ino
+    prev_want = full_scan()
+    offsets = []
+    CHUNK = 4 * 1024 * 1024
+    with open(DATA, "rb") as fr:
+        pos, tail = 0, b""
+        while len(offsets) < 200:
+            chunk = fr.read(CHUNK)
+            if not chunk:
+                break
+            buf = tail + chunk
+            base = pos - len(tail)
+            start = 0
+            while len(offsets) < 200:
+                idx = buf.find(OLD_TAG, start)
+                if idx < 0:
+                    break
+                offsets.append(base + idx)
+                start = idx + len(OLD_TAG)
+            pos += len(chunk)
+            tail = buf[-(len(OLD_TAG) - 1):]
+    if len(offsets) < 50:
+        fails.append("2i setup: only %d candidate lines found (want >=50)" % len(offsets))
+    else:
+        with open(DATA, "r+b", buffering=0) as fw:
+            for off in offsets:
+                fw.seek(off)
+                fw.write(NEW_TAG)
+        st_after = os.stat(DATA)
+        if st_after.st_size != size_before or st_after.st_ino != ino_before:
+            fails.append("2i setup broken: size/inode changed (%d/%d -> %d/%d)"
+                         % (size_before, ino_before, st_after.st_size, st_after.st_ino))
+        want = full_scan()
+        if want == prev_want:
+            fails.append("2i setup broken: rewrite produced no observable change")
+        got, el = get_agg(timeout=40)
+        if el > ROTATE_SLA:
+            fails.append("2i same-size in-place rewrite: %.2fs > %.1fs" % (el, ROTATE_SLA))
+        check(got, expect_of(want), "2i same-size in-place rewrite (inode+size unchanged, mtime only)")
+except Exception as e:
+    fails.append("2i same-size in-place rewrite test failed: %s" % e)
+
 print("OK" if not fails else "FAIL: " + "; ".join(fails))
 PY
 )
