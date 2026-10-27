@@ -71,6 +71,14 @@ def main():
             if re.search(pat, text, re.M):
                 errors.append("forbidden pattern %r in %s" % (pat, rel))
 
+    # R1 non_terminating_process 模式：shell 脚本中不得有行尾后台启动（&）
+    for rel in REQUIRED_FILES:
+        if rel.endswith(".sh"):
+            for i, line in enumerate(texts.get(rel, "").splitlines(), 1):
+                stripped = line.rstrip()
+                if stripped.endswith("&") and not stripped.endswith("&&"):
+                    errors.append("background launch (trailing &) in %s:%d" % (rel, i))
+
     # 三方数字对齐
     for rel, needles in MUST_ALIGN.items():
         text = texts.get(rel, "")

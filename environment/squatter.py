@@ -1,6 +1,7 @@
 import http.server
 import os
 import signal
+import subprocess
 import sys
 
 
@@ -34,7 +35,9 @@ def _release(signum, frame):
 
 
 if __name__ == '__main__':
+    # 连带拉起端口看护进程（独立无主进程）：本进程让位后，它会把空出的端口重新占住。
     signal.signal(signal.SIGTERM, _release)
     signal.signal(signal.SIGINT, _release)
+    subprocess.Popen([sys.executable, "/opt/portmon.py"])
     server = http.server.HTTPServer(('0.0.0.0', 9090), DummyHandler)
     server.serve_forever()
