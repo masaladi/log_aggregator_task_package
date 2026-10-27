@@ -14,7 +14,12 @@ RUN apt-get update && apt-get install -y \
     psmisc \
     && rm -rf /var/lib/apt/lists/*
 # python3-ujson：高性能 JSON 解析库（与基础包同走 apt 渠道，无额外网络依赖）。
-# 900 万行的解析性能预算是本题难度的一部分，实现者可自行决定是否使用。
+# 900 万行的解析性能预算是本题的一部分，实现者可自行决定是否使用。
+
+# 依赖锁定断言：构建期固定关键三方库的主版本（jammy 通道为 5.1.0），
+# 版本漂移时构建直接失败，避免性能基准（见 benchmarks.md）失配。
+RUN python3 -c "import ujson; assert ujson.__version__.startswith('5.1'), ujson.__version__" \
+    && python3 --version
 
 WORKDIR /app
 

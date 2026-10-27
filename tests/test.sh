@@ -12,6 +12,9 @@ VENV_PY="/opt/log-aggregator/venv/bin/python"
 APP_PY="/opt/log-aggregator/app.py"
 
 mkdir -p /logs/verifier
+# 判分完整性：verifier 启动时先清除代理阶段可能遗留的判分文件，
+# 确保最终 reward 只能来自本次 verifier 进程的真实计算。
+rm -f /logs/verifier/reward.txt
 PASS=0
 TOTAL=3
 
@@ -44,11 +47,15 @@ PY
 
 echo "===== ITEM 1/3: protocol, endpoints and custom header ====="
 ITEM1=$(python3 - <<'PY'
-import json, os, urllib.request, urllib.error
+import json, os, re, urllib.request, urllib.error
 
 BASE = os.environ["BASE"]
 HDR = "X-Log-Aggregator-Status"
 fails = []
+
+def allow_value(h):
+    """Allow 头归一化校验值：instruction.md 规定精确为 'GET, HEAD'"""
+    return re.sub(r"\s+", "", h.get("Allow") or "")
 
 def get(path):
     try:
@@ -76,7 +83,9 @@ if code != 200:
     fails.append("/api/v1/aggregate status=%s" % code)
 if h.get(HDR) != "Verified":
     fails.append("/api/v1/aggregate header=%r" % h.get(HDR))
+agg_body_len = -1
 try:
+    agg_body_len = len(body.encode("utf-8"))
     res = json.loads(body)
     if not isinstance(res, dict):
         fails.append("aggregate body is not object")
@@ -137,6 +146,20 @@ try:
 except ValueError:
     fails.append("HEAD /healthz Content-Length not numeric")
 
+# HEAD 对 /api/v1/aggregate 同样适用：200、响应头与 GET 一致（含 Content-Length）、响应体为空
+code, h, body = head("/api/v1/aggregate")
+if code != 200:
+    fails.append("HEAD /api/v1/aggregate status=%s (want 200)" % code)
+if h.get(HDR) != "Verified":
+    fails.append("HEAD /api/v1/aggregate header=%r" % h.get(HDR))
+if body:
+    fails.append("HEAD /api/v1/aggregate returned a body")
+try:
+    if agg_body_len > 0 and int(h.get("Content-Length") or -1) != agg_body_len:
+        fails.append("HEAD /api/v1/aggregate Content-Length=%r (want %d, same as GET)" % (h.get("Content-Length"), agg_body_len))
+except ValueError:
+    fails.append("HEAD /api/v1/aggregate Content-Length not numeric")
+
 def post(path):
     try:
         req = urllib.request.Request(BASE + path, data=b"", method="POST")
@@ -150,12 +173,21 @@ def post(path):
 code, h = post("/api/v1/aggregate")
 if code != 405:
     fails.append("POST /api/v1/aggregate status=%s (want 405)" % code)
-elif "GET" not in (h.get("Allow") or ""):
-    fails.append("POST 405 missing Allow header, got %r" % h.get("Allow"))
+if allow_value(h) != "GET,HEAD":
+    fails.append("POST 405 Allow=%r (want exactly 'GET, HEAD')" % h.get("Allow"))
 if h.get(HDR) != "Verified":
     fails.append("POST 405 header=%r" % h.get(HDR))
 
-# 其余非 GET/HEAD 方法同样必须 405 + Allow（方法边界完备性）
+# 方法语义优先于路径匹配：未知路径上的非 GET/HEAD 方法同样必须 405（而非 404）
+code, h = post("/no-such-path")
+if code != 405:
+    fails.append("POST /no-such-path status=%s (want 405, method check precedes routing)" % code)
+if allow_value(h) != "GET,HEAD":
+    fails.append("POST /no-such-path Allow=%r (want 'GET, HEAD')" % h.get("Allow"))
+if h.get(HDR) != "Verified":
+    fails.append("POST /no-such-path header=%r" % h.get(HDR))
+
+# 其余非 GET/HEAD 方法同样必须 405 + Allow + 自定义头（方法边界完备性）
 for meth in ("OPTIONS", "PATCH", "PUT", "DELETE"):
     try:
         req = urllib.request.Request(BASE + "/healthz", data=b"", method=meth)
@@ -167,8 +199,31 @@ for meth in ("OPTIONS", "PATCH", "PUT", "DELETE"):
         c2, h2 = -1, {}
     if c2 != 405:
         fails.append("%s /healthz status=%s (want 405)" % (meth, c2))
-    elif "GET" not in (h2.get("Allow") or ""):
-        fails.append("%s 405 missing Allow header" % meth)
+        continue
+    if allow_value(h2) != "GET,HEAD":
+        fails.append("%s 405 Allow=%r (want exactly 'GET, HEAD')" % (meth, h2.get("Allow")))
+    if h2.get(HDR) != "Verified":
+        fails.append("%s 405 header=%r" % (meth, h2.get(HDR)))
+    if (h2.get("Content-Length") or "x").strip() != "0":
+        fails.append("%s 405 Content-Length=%r (want 0, no chunked)" % (meth, h2.get("Content-Length")))
+
+# framing：GET 响应必须带精确 Content-Length（不得 chunked / 缺失）
+try:
+    r = urllib.request.urlopen(BASE + "/healthz", timeout=5)
+    body = r.read()
+    if int(r.headers.get("Content-Length") or -1) != len(body):
+        fails.append("GET /healthz Content-Length=%r (want %d)" % (r.headers.get("Content-Length"), len(body)))
+    if (r.headers.get("Transfer-Encoding") or "").lower().find("chunked") >= 0:
+        fails.append("GET /healthz uses chunked encoding")
+except Exception as e:
+    fails.append("GET /healthz framing check failed: %s" % e)
+try:
+    r = urllib.request.urlopen(BASE + "/api/v1/aggregate", timeout=10)
+    body = r.read()
+    if int(r.headers.get("Content-Length") or -1) != len(body):
+        fails.append("GET /api/v1/aggregate Content-Length=%r (want %d)" % (r.headers.get("Content-Length"), len(body)))
+except Exception as e:
+    fails.append("GET /api/v1/aggregate framing check failed: %s" % e)
 
 print("OK" if not fails else "FAIL: " + "; ".join(fails))
 PY
@@ -434,6 +489,26 @@ try:
     check(got, expect_of(state), "2e bad timestamps must be filtered")
 except Exception as e:
     fails.append("2e bad timestamp test failed: %s" % e)
+
+# ---------- 2a3. 全非法文件：所有行都无法构成有效记录时统计必须归零 ----------
+try:
+    import shutil
+    bak2 = DATA + ".pre2a3"
+    shutil.copyfile(DATA, bak2)
+    tmp_junk = DATA + ".junk"
+    with open(tmp_junk, "w", encoding="utf-8") as f:
+        for i in range(500):
+            f.write("this is not json at all {{\n" if i % 2 == 0 else "[[[broken fragment\n")
+    os.chmod(tmp_junk, 0o644)
+    os.replace(tmp_junk, DATA)
+    want = expect_of(full_scan())      # 全非法 → 全部过滤，统计归零
+    got, el = get_agg(timeout=10)
+    if el > SLA:
+        fails.append("2a3 all-invalid: %.2fs > %.1fs" % (el, SLA))
+    check(got, want, "2a3 all-invalid file (stats must be zero)")
+    os.replace(bak2, DATA)             # 还原现场（原子替换，不破坏后续测试的 inode 语义）
+except Exception as e:
+    fails.append("2a3 all-invalid test failed: %s" % e)
 
 print("OK" if not fails else "FAIL: " + "; ".join(fails))
 PY
@@ -830,6 +905,7 @@ try:
                     % (1 + i % 28, i % 24, (i // 24) % 60, (i // 1440) % 60,
                        ["INFO", "WARN", "ERROR", "DEBUG"][i % 4], i % 41, 1.5 + (i % 800) * 0.02))
     os.chmod(tmp2, 0o644)
+    old_ino = os.stat(DATA).st_ino     # 静默通过防护：轮转必须真实发生（inode 改变）
 
     def swapper():
         time.sleep(0.05)
@@ -844,6 +920,14 @@ try:
         futs = [ex.submit(lambda: get_agg(timeout=40)) for _ in range(20)]
         results = [fu.result() for fu in futs]
     sw.join(timeout=10)
+    try:
+        if os.stat(DATA).st_ino == old_ino:
+            fails.append("3f rotation window did not execute (inode unchanged; "
+                         "cannot accept a trivially-passing concurrency window)")
+        if os.path.exists(tmp2):
+            fails.append("3f rotation leftover: %s still exists" % tmp2)
+    except Exception as e:
+        fails.append("3f rotation verification failed: %s" % e)
     want_new = full_scan()
 
     for got, _ in results:
@@ -872,3 +956,16 @@ echo "===== RESULT: $PASS/$TOTAL -> reward=$REWARD ====="
 mkdir -p "$(dirname "$REWARD_FILE")"
 printf '%s' "$REWARD" > "$REWARD_FILE"
 echo "[reward] written to $REWARD_FILE"
+
+# 判分完整性自检：写入后复读校验，并在短暂窗口内检测代理侧篡改。
+# 被测代理对容器文件系统拥有写权限，verifier 无法依赖文件系统隔离，
+# 因此以"写后验证 + 篡改恢复"保证最终落盘内容与本次计算结果一致。
+for _ in 1 2 3; do
+    sleep 1
+    REWARD_GOT="$(cat "$REWARD_FILE" 2>/dev/null)"
+    if [ "$REWARD_GOT" != "$REWARD" ]; then
+        echo "[reward] TAMPERING DETECTED (file contains '$REWARD_GOT', expected '$REWARD'); restoring" >&2
+        printf '%s' "$REWARD" > "$REWARD_FILE"
+    fi
+done
+echo "[reward] final content: $REWARD (sha256 $(sha256sum "$REWARD_FILE" 2>/dev/null | cut -d' ' -f1))"

@@ -67,7 +67,7 @@ except ImportError:
 CONFIG_PATH = "/etc/log-aggregator/config.json"
 DEFAULT_DATA_FILE = "/var/lib/log-aggregator/logs.jsonl"
 ISO_RE = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
-LOCK_WAIT_SEC = 1.5
+LOCK_WAIT_SEC = 1.0
 EMPTY_STATS = {"total_logs": 0, "error_count": 0, "avg_latency_ms": 0.0, "levels": {}}
 READ_CHUNK = 1 << 22
 HEAD_BYTES = 4096

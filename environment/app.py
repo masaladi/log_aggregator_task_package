@@ -3,8 +3,9 @@
 # 是任务要求被测代理排查修复的对象（见 environment/Dockerfile 中的角色注释）。
 # 已知故意缺陷包括但不限于：
 #   - 默认端口与数据文件路径错误（依赖 config.json 与现场修正）
-#   - 未实现 GET/HEAD 之外的 HTTP 方法契约（缺 405 + Allow 响应）
+#   - 未实现 HEAD 方法契约（缺与 GET 同头不同体的 HEAD 响应）
 #   - 每次请求全量重解析，无法满足增量时延门槛
+#   - 无 flock 共享锁等待与快照回退、无 ISO 8601 严格校验
 #   - 其余配置、权限与并发缺陷由被测代理自行发现
 # ============================================================================
 import http.server
@@ -95,6 +96,30 @@ class LogAggregatorHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(404)
             self.send_header("X-Log-Aggregator-Status", "Verified")
             self.end_headers()
+
+    # 非 GET/HEAD 方法：按契约返回 405 + Allow（此部分与契约一致；
+    # 其余缺陷——端口/数据路径/ISO 校验/增量/flock——仍为故意保留）
+    def _method_not_allowed(self):
+        self.send_response(405)
+        self.send_header("Allow", "GET, HEAD")
+        self.send_header("X-Log-Aggregator-Status", "Verified")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_POST(self):
+        self._method_not_allowed()
+
+    def do_PUT(self):
+        self._method_not_allowed()
+
+    def do_DELETE(self):
+        self._method_not_allowed()
+
+    def do_OPTIONS(self):
+        self._method_not_allowed()
+
+    def do_PATCH(self):
+        self._method_not_allowed()
 
     def log_message(self, format, *args):
         return
