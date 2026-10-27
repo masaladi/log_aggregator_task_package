@@ -75,6 +75,8 @@ commit SHA，而以下列**文件内容指纹（sha256）**为准——质检可
 | `tests/test.sh` | `24ee317932df9fd4cdc63b9c22b34a18d3c70907ab1fb05a9adef5293890fd64` |
 | `environment/gen_baseline.py` | `cd65ae3af448ead48e169d5c796610592d05b4bf9a62a22dbee6cb1a1c53e1d6` |
 | `environment/Dockerfile` | `aed7fdb4ea40e2e28e4c512539330ce24a36d4f4a9ef0c89118cb006221e990e` |
+| `environment/squatter.py` | `ac3040ff707102bcfd0fce66967f5cc50288e74a719f3666a319a9320e5919c0` |
+| `environment/entrypoint.sh` | `f7a51865b9e8945abed7c7e5fb4686d7e51d9d36b7af142d7198d2b3ee7efb4e` |
 
 ### 历史回归记录
 
