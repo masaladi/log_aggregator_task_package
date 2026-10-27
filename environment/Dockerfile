@@ -37,6 +37,11 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 755 /usr/local/bin/entrypoint.sh /opt/log-aggregator/app.py /opt/squatter.py /opt/portmon.py
 
 COPY config.json /etc/log-aggregator/config.json
+# 上一任留下的配置权限现场：文件属 root 且组/其他用户不可读，
+# 以 logsvc 运行的服务因此读不到配置，需自行排查。
+RUN chown root:root /etc/log-aggregator/config.json \
+    && chmod 640 /etc/log-aggregator/config.json \
+    && chmod 755 /etc/log-aggregator
 
 # 基线数据：约 900 万行 / 880 MB。规模是本题难度的一部分——
 # 单核下全量重解析需 20 秒以上，因此服务必须做增量解析。

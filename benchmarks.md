@@ -6,7 +6,7 @@
 ## 环境
 
 - 基础镜像：`ubuntu:22.04`（按 Dockerfile 摘要锁定），Python 3.10
-- 基线数据：`environment/gen_baseline.py` 生成，9,000,000 行 / 约 880 MB（`random.seed(20261023)`，确定性）
+- 基线数据：`environment/gen_baseline.py` 生成，9,000,000 行 / 约 930 MB（`random.seed(20261023)`，确定性）
 - 运行方式：`docker run --cpus=1 --memory=2g`，容器内单进程
 
 ## 解析全量基线（9M 行，逐行 `loads` + ISO 校验 + latency 累加）

@@ -50,6 +50,14 @@ def main():
                 ts = BAD_TS[i % 4](ts)
                 buf.append('{"timestamp":"%s","level":"%s","service":"%s","latency_ms":%.3f}'
                            % (ts, lvl, svc, random.uniform(0.5, 900.0)))
+            elif i % 300000 == 7777:
+                # 超长行（约 1.5 MB 的 ctx 负载）：合法有效行。
+                # 对"字节偏移 + 固定窗口取巧解析"的实现是必须健壮处理的形态；
+                # 先消耗一次 random（不使用）：保持随机流与历史版本一致，盘点数字不变。
+                random.uniform(0.5, 900.0)
+                payload = "x" * 1500000
+                buf.append('{"timestamp":"%s","level":"INFO","service":"bulk-%d","latency_ms":1.000,'
+                           '"ctx":{"note":"%s"}}' % (ts, i % 97, payload))
             else:
                 if r < 0.25:
                     # 嵌套对象里也带 level：只认顶层

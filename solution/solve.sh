@@ -39,6 +39,7 @@ cat << 'EOF' > /etc/log-aggregator/config.json
   }
 }
 EOF
+chmod 644 /etc/log-aggregator/config.json   # 修复配置读取权限（原 640 root:root，logsvc 不可读）
 
 # 4. 修复权限：数据目录需可进入、数据文件需可被 logsvc 读取、日志目录需可被 logsvc 写入
 chmod 755 /var/lib/log-aggregator

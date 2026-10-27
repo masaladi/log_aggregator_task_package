@@ -141,6 +141,19 @@ if code != 200:
 if h.get(HDR) != "Verified":
     fails.append("/api/v1/aggregate?fresh=1 header=%r" % h.get(HDR))
 
+# URL 解析口径：fragment 剥离；不做规范化、不做百分号解码
+code, h, body = get("/healthz#top")
+if code != 200:
+    fails.append("/healthz#top status=%s (want 200, fragment is not part of routing)" % code)
+code, h, body = get("/healthz/../healthz")
+if code != 404:
+    fails.append("/healthz/../healthz status=%s (want 404, no path normalization)" % code)
+if h.get(HDR) != "Verified":
+    fails.append("/healthz/../healthz header=%r" % h.get(HDR))
+code, h, body = get("/healthz%2F")
+if code != 404:
+    fails.append("/healthz%%2F status=%s (want 404, no percent-decoding)" % code)
+
 code, h, body = get("/api/v1/aggregate/extra")
 if code != 404:
     fails.append("/api/v1/aggregate/extra status=%s (want 404)" % code)
@@ -535,6 +548,58 @@ try:
     os.replace(bak2, DATA)             # 还原现场（原子替换，不破坏后续测试的 inode 语义）
 except Exception as e:
     fails.append("2a3 all-invalid test failed: %s" % e)
+
+# ---------- 2g. 合成变更窗口：追加 → 截断 → 再追加，单请求必须精确反映最终内容 ----------
+try:
+    import shutil
+    bak3 = DATA + ".pre2g"
+    shutil.copyfile(DATA, bak3)
+    sz0 = os.path.getsize(DATA)
+    try:
+        get_agg(timeout=40)            # prep：消费 2a3 原子还原带来的 inode 变化，重建已解析区间
+    except Exception:
+        pass
+    with open(DATA, "a", encoding="utf-8") as f:
+        f.write("\n".join(mk_line(910000 + i, "WARN") for i in range(2000)) + "\n")
+    mid_want = full_scan()             # 中间态真值：追加后的内容
+    got, el = get_agg(timeout=30)
+    if el > SLA:
+        fails.append("2g mid append: %.2fs > %.1fs" % (el, SLA))
+    check(got, expect_of(mid_want), "2g mid state after append (before truncate)")
+    os.truncate(DATA, sz0)             # 截断：结构性变更，丢弃刚追加的 2000 行
+    with open(DATA, "a", encoding="utf-8") as f:
+        f.write("\n".join(mk_line(920000 + i, "ERROR") for i in range(1500)) + "\n")
+    want = full_scan()                 # 最终真值：sz0 内容 + 1500 行
+    got, el = get_agg(timeout=40)
+    if el > ROTATE_SLA:
+        fails.append("2g truncate window: %.2fs > %.1fs (truncate is a structural change)" % (el, ROTATE_SLA))
+    check(got, expect_of(want), "2g final state after truncate+re-append in one window")
+    os.replace(bak3, DATA)             # 原子还原现场
+except Exception as e:
+    fails.append("2g synthetic window test failed: %s" % e)
+
+# ---------- 2h. 连续两次轮转：状态必须落在最后一次替换的内容上 ----------
+try:
+    import shutil
+    tmpA = DATA + ".rotA"
+    tmpB = DATA + ".rotB"
+    with open(tmpA, "w", encoding="utf-8") as f:
+        for i in range(800):
+            f.write(mk_line(930000 + i, "INFO") + "\n")
+    with open(tmpB, "w", encoding="utf-8") as f:
+        for i in range(1200):
+            f.write(mk_line(940000 + i, "DEBUG") + "\n")
+    os.chmod(tmpA, 0o644)
+    os.chmod(tmpB, 0o644)
+    os.replace(tmpA, DATA)             # 第一次轮转
+    os.replace(tmpB, DATA)             # 第二次轮转：上一次尚未被请求消费
+    want = full_scan()                 # 独立真值 = tmpB 的内容
+    got, el = get_agg(timeout=40)
+    if el > ROTATE_SLA:
+        fails.append("2h consecutive rotations: %.2fs > %.1fs" % (el, ROTATE_SLA))
+    check(got, expect_of(want), "2h consecutive rotations (final inode wins)")
+except Exception as e:
+    fails.append("2h consecutive rotation test failed: %s" % e)
 
 print("OK" if not fails else "FAIL: " + "; ".join(fails))
 PY
